@@ -22,6 +22,12 @@ const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
+// Behind a reverse proxy (Nginx) the real client address arrives in
+// X-Forwarded-For. Set TRUST_PROXY=1 there, so the login rate limit counts each
+// person separately instead of counting everyone as the proxy. Leave it unset
+// when the API is reached directly.
+app.set('trust proxy', Number(process.env.TRUST_PROXY || 0));
+
 const allowedOrigins = (process.env.CORS_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
 app.use(helmet());
 app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : true }));
