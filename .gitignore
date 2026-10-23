@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Secrets and local settings: never commit these (use .env.example as the template)
+.env
+.env.*
+!.env.example
+*.local
+
+# Database backups and logs
+backups/
+*.sql.gz
+*.log
+
+# Business documents (proposals, pricing) are not part of the code
+docs/
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
