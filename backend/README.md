@@ -79,6 +79,19 @@ seeds small fixtures for every role, so it never touches real data (it refuses
 to run against any database whose name does not end in `_test`). The DB user
 needs permission to create databases.
 
+## Demo data
+
+`node scripts/seed-demo.js` fills an empty database with an organisation (5
+departments, 10 teams), HR, three project managers, twenty employees, six
+projects at different stages, tasks, several weeks of logged hours, the
+notifications the platform would have raised, and an audit trail. It uses only
+the roles Batch 1 opens. Every demo account shares one generated password,
+printed once (or set `DEMO_PASSWORD`). It refuses to run if the database already
+has departments, projects or people.
+
+`node scripts/seed-demo.js clear --yes` removes all of it again (and anything
+entered since), keeping System Administrator accounts and the real audit trail.
+
 ## Rollout: showing Version 1 in batches
 
 `ROLLOUT_BATCH` in `.env` decides how much of Version 1 users can see. It is not
