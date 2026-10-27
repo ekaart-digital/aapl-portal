@@ -20,7 +20,7 @@ const updateSettings = asyncHandler(async (req, res) => {
 
   const values = {};
   for (const key of keys) {
-    if (!settings.KEYS.includes(key)) throw ApiError.badRequest(`Unknown setting: ${key}.`);
+    if (!settings.isAvailable(key)) throw ApiError.badRequest(`Unknown setting: ${key}.`);
     const checked = settings.validate(key, body[key]);
     if (checked.error) throw ApiError.badRequest(checked.error);
     values[key] = checked.value;

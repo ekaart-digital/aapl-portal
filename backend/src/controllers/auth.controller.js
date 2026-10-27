@@ -6,6 +6,7 @@ const { ApiError } = require('../utils/ApiError');
 const { assertStrongPassword } = require('../utils/password');
 const { EMPLOYEE_SELECT, toSessionUser } = require('../services/people');
 const { record } = require('../services/audit');
+const { isRoleEnabled } = require('../config/rollout');
 
 function signToken(employee) {
   return jwt.sign(
@@ -40,6 +41,9 @@ const login = asyncHandler(async (req, res) => {
     await record(actor, { action: 'auth.login-failed', entityType: 'auth', entityId: employee.employee_id, summary: `Failed sign-in for ${employee.name}` });
     throw ApiError.unauthorized('Invalid employee ID or password.');
   }
+
+  // Only after the password is right, so a stranger cannot learn who has which role.
+  if (!isRoleEnabled(employee.role)) throw ApiError.forbidden('Your role is not available yet.');
 
   await record(actor, { action: 'auth.login', entityType: 'auth', entityId: employee.employee_id, summary: `${employee.name} signed in` });
   res.json({ token: signToken(employee), user: toSessionUser(employee) });

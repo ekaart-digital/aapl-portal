@@ -162,7 +162,7 @@ export default function ManHours() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24 }}>
                 <BreakdownTable title="By employee" rows={detail.byEmployee} />
                 <BreakdownTable title="By task type" rows={detail.byTaskType} />
-                <BreakdownTable title="By category" rows={detail.byCategory || []} />
+                {detail.byCategory && <BreakdownTable title="By category" rows={detail.byCategory} />}
                 <BreakdownTable title="By department" rows={detail.byDepartment} />
               </div>
             )}

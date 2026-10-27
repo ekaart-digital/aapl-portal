@@ -15,8 +15,8 @@ function requireAnyDashboard(req, res, next) {
 }
 
 router.get('/', requireAnyDashboard, overview);
-router.get('/projects', requireCapability('reports.view'), projectsHealth);
-router.get('/projects/:projectId', requireCapability('reports.view'), projectDetail);
+router.get('/projects', requireCapability('manhours.view'), projectsHealth);
+router.get('/projects/:projectId', requireCapability('manhours.view'), projectDetail);
 router.get('/exceptions', requireCapability('exceptions.view'), exceptions);
 
 module.exports = router;

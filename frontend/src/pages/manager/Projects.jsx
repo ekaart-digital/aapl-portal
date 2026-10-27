@@ -25,7 +25,8 @@ export default function Projects() {
   const { pushToast } = useApp();
   const navigate = useNavigate();
   const canCreate = can('projects.create');
-  const canReview = can('sessions.review');
+  // The queue of sessions to review is on the Reports screen, so only offer it when that is open.
+  const canReview = can('sessions.review') && can('reports.view');
 
   const [projects, setProjects] = useState([]);
   const [managers, setManagers] = useState([]);

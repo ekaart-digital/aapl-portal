@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 const { ApiError } = require('../utils/ApiError');
 const { ROLES, can } = require('../auth/permissions');
+const { isRoleEnabled } = require('../config/rollout');
 
 // Everything a request needs to know about who is calling, read fresh from
 // the database so a deactivation or role change applies immediately.
@@ -49,6 +50,7 @@ async function requireAuth(req, res, next) {
   try {
     const user = await loadUserContext(payload.sub);
     if (!user) return next(ApiError.unauthorized('This account is no longer active.'));
+    if (!isRoleEnabled(user.role)) return next(ApiError.forbidden('Your role is not available yet.'));
     req.user = user;
     return next();
   } catch (err) {

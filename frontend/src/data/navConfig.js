@@ -16,7 +16,7 @@ export const navConfig = [
       { label: 'My Tasks', path: '/my-tasks', icon: 'Clock', requires: 'my-work' },
       { label: 'My Progress', path: '/my-progress', icon: 'FolderKanban', requires: 'my-work' },
       { label: 'My Time', path: '/my-time', icon: 'History', requires: 'corrections.request' },
-      { label: 'My Report', path: '/my-report', icon: 'FileBarChart', requires: 'my-work' },
+      { label: 'My Report', path: '/my-report', icon: 'FileBarChart', requires: 'reports.own' },
     ],
   },
   {
@@ -35,9 +35,9 @@ export const navConfig = [
   {
     label: 'Insights',
     items: [
-      { label: 'Man-Hours', path: '/man-hours', icon: 'TimerReset', requires: 'reports.view' },
+      { label: 'Man-Hours', path: '/man-hours', icon: 'TimerReset', requires: 'manhours.view' },
       { label: 'Exceptions', path: '/exceptions', icon: 'AlertTriangle', requires: 'exceptions.view' },
-      { label: 'Approvals', path: '/approvals', icon: 'CheckCircle2', requires: 'sessions.review' },
+      { label: 'Approvals', path: '/approvals', icon: 'CheckCircle2', requires: 'corrections.review' },
       { label: 'Reports', path: '/reports', icon: 'FileBarChart', requires: 'reports.view' },
       { label: 'Work Report', path: '/work-report', icon: 'User', requires: 'reports.view' },
       { label: 'Summary', path: '/summary', icon: 'CalendarCheck', requires: 'reports.view' },

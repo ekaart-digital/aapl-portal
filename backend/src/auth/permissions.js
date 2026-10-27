@@ -37,6 +37,8 @@ const NO_DEPARTMENT_ROLES = [ROLES.PROJECT_MANAGER, ROLES.HR_ADMIN, ROLES.MANAGE
 // Roles HR/Admin may create. The powerful ones are reserved for the System Administrator.
 const HR_ASSIGNABLE_ROLES = [ROLES.EMPLOYEE, ROLES.TEAM_LEADER, ROLES.DEPARTMENT_HEAD, ROLES.PROJECT_MANAGER];
 
+const { isRoleEnabled, isCapabilityEnabled } = require('../config/rollout');
+
 const { EMPLOYEE, TEAM_LEADER, DEPARTMENT_HEAD, PROJECT_MANAGER, HR_ADMIN, MANAGEMENT, SYSTEM_ADMIN } = ROLES;
 
 const CAPABILITIES = {
@@ -50,8 +52,10 @@ const CAPABILITIES = {
   'projects.edit': [PROJECT_MANAGER, DEPARTMENT_HEAD],
   'tasks.allocate': [PROJECT_MANAGER, DEPARTMENT_HEAD, TEAM_LEADER],
 
-  // Reviewing time: auto-stopped sessions, corrections and approvals
+  // Correcting logged time directly, and the queue of auto-stopped sessions
   'sessions.review': [PROJECT_MANAGER, DEPARTMENT_HEAD, TEAM_LEADER],
+  // Employee correction requests, and deciding on them (a later batch than the above)
+  'corrections.review': [PROJECT_MANAGER, DEPARTMENT_HEAD, TEAM_LEADER],
 
   // People and structure
   'employees.view': [TEAM_LEADER, DEPARTMENT_HEAD, PROJECT_MANAGER, HR_ADMIN, MANAGEMENT, SYSTEM_ADMIN],
@@ -61,6 +65,8 @@ const CAPABILITIES = {
 
   // Insight
   'reports.view': [TEAM_LEADER, DEPARTMENT_HEAD, PROJECT_MANAGER, MANAGEMENT],
+  'reports.own': [EMPLOYEE, TEAM_LEADER],
+  'manhours.view': [TEAM_LEADER, DEPARTMENT_HEAD, PROJECT_MANAGER, MANAGEMENT],
   'exceptions.view': [TEAM_LEADER, DEPARTMENT_HEAD, PROJECT_MANAGER, MANAGEMENT],
   'audit.view': [HR_ADMIN, MANAGEMENT, SYSTEM_ADMIN],
   'dashboard.company': [MANAGEMENT],
@@ -82,13 +88,15 @@ const LANDING = {
   system_admin: '/admin',
 };
 
+// A role may do something only if the role and the capability are both switched
+// on in the current rollout batch (see config/rollout.js).
 function can(role, capability) {
   const roles = CAPABILITIES[capability];
-  return Boolean(roles && roles.includes(role));
+  return Boolean(roles && roles.includes(role) && isRoleEnabled(role) && isCapabilityEnabled(capability));
 }
 
 function permissionsFor(role) {
-  return Object.keys(CAPABILITIES).filter((capability) => CAPABILITIES[capability].includes(role));
+  return Object.keys(CAPABILITIES).filter((capability) => can(role, capability));
 }
 
 function landingFor(role) {

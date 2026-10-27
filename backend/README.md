@@ -79,6 +79,29 @@ seeds small fixtures for every role, so it never touches real data (it refuses
 to run against any database whose name does not end in `_test`). The DB user
 needs permission to create databases.
 
+## Rollout: showing Version 1 in batches
+
+`ROLLOUT_BATCH` in `.env` decides how much of Version 1 users can see. It is not
+a setting in the application: to open the next batch, change the number and
+restart the API (`systemctl restart aapl-api` on the server).
+
+| Batch | Opens |
+|---|---|
+| **1** | Daily work and project tracking: Employee, Project Manager, HR / Admin and System Administrator; sign-in, people and organisation set-up, projects and tasks, the timer, My Tasks and My Progress, a project's own hours, correcting hours directly, notifications, the audit trail, system health and settings, the privacy page |
+| **2** | Team leadership: Team Leader and Department Head roles, team and department dashboards, allocating within a team or department, Man-Hours (completion, projection, RED / AMBER / GREEN), Exceptions |
+| **3** | Time corrections: employee requests (My Time) and the Approvals queue |
+| **4** | Management reporting: Management role, company dashboard, reports, Work Report and My Report, summaries and their notifications |
+| **5** | Refinements: task categories, project team leader, agreed fee and own completion figure, employee photographs and overtime, the "no allocation" exception, email copies of notifications |
+
+Each batch includes the ones before it. With the setting left out, everything is
+on. A value that is set but not valid opens batch 1 only, so a typo never opens
+more than intended.
+
+What is closed is hidden from the screens (the browser is only told what is
+open) **and** refused by the server: a closed role cannot sign in, and a closed
+screen, report or field is rejected whatever address or call is used. Data
+entered earlier is kept and simply starts to appear when its batch opens.
+
 ## Roles and what they can do
 
 One role per account. What a role may do is decided in one place,

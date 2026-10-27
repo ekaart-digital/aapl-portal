@@ -93,12 +93,13 @@ describe('man-hours additions', () => {
     expect(within(panel).getByText('Uncategorised')).toBeInTheDocument();
   });
 
-  it('copes with a server that sends no categories', async () => {
+  it('leaves out the category box when the server sends no categories (they are not open yet)', async () => {
     mocks.getProjectManHours.mockResolvedValue({ id: 1, name: 'Saria Refinery', byEmployee: [], byTaskType: [], byDepartment: [] });
     inRouter(<ManHours />);
     await userEvent.click(await screen.findByText('Saria Refinery'));
     const panel = await screen.findByTestId('manhour-breakdown');
-    await within(panel).findByText('By category');
+    await within(panel).findByText('By department');
+    expect(within(panel).queryByText('By category')).not.toBeInTheDocument();
   });
 
   it('exports the rows shown as CSV', async () => {

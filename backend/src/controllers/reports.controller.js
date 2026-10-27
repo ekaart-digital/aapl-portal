@@ -213,7 +213,7 @@ const employeeReport = asyncHandler(async (req, res) => {
 
   const self = target.employee_id === req.user.id;
   if (self) {
-    if (!can(req.user.role, 'my-work') && !can(req.user.role, 'reports.view')) throw ApiError.forbidden('Your role does not have a work report.');
+    if (!can(req.user.role, 'reports.own') && !can(req.user.role, 'reports.view')) throw ApiError.forbidden('Your role does not have a work report.');
   } else {
     if (!can(req.user.role, 'reports.view')) throw ApiError.forbidden('Your role does not allow this report.');
     const ps = employeeScope(req.user, 'e');

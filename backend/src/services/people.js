@@ -1,5 +1,6 @@
 const { ROLE_LABELS, permissionsFor, landingFor } = require('../auth/permissions');
 const settings = require('./settings');
+const { featureOn, rolloutInfo } = require('../config/rollout');
 
 // One employee row with their department, team and reporting lines (SRS §6:
 // reporting Team Leader and reporting Department Head).
@@ -23,9 +24,9 @@ const EMPLOYEE_SELECT = `
 // Administrator hold people data only, so the allocation is left out for them).
 function toPublicEmployee(row, showProjects = false) {
   return {
-    overtimeEligible: Boolean(row.overtime_eligible),
-    hasPhoto: Boolean(row.has_photo),
-    ...(showProjects ? { currentProjects: row.current_projects ? row.current_projects.split('||') : [] } : {}),
+    ...(featureOn('overtime') ? { overtimeEligible: Boolean(row.overtime_eligible) } : {}),
+    ...(featureOn('photos') ? { hasPhoto: Boolean(row.has_photo) } : {}),
+    ...(showProjects && featureOn('currentProjects') ? { currentProjects: row.current_projects ? row.current_projects.split('||') : [] } : {}),
     id: row.employee_id,
     name: row.name,
     email: row.email,
@@ -57,6 +58,8 @@ function toSessionUser(row) {
     // Minutes of inactivity before the browser signs this person out. Employees
     // are exempt while a timer is running; that is handled in the browser.
     sessionTimeoutMinutes: settings.get('sessionTimeoutMinutes'),
+    // Which batch is open, so the screens show only what is available.
+    rollout: rolloutInfo(),
   };
 }
 

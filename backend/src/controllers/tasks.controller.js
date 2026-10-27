@@ -7,6 +7,7 @@ const { autoStopStaleSessions } = require('../services/timerSweep');
 const { notify, reportingLinesOf } = require('../services/notifications');
 const { record, changes } = require('../services/audit');
 const { TASK_CATEGORIES } = require('../config/categories');
+const { featureOn } = require('../config/rollout');
 
 const TASK_STATUSES = ['Not Started', 'In Progress', 'Partially Completed', 'Awaiting Input', 'On Hold', 'Completed'];
 
@@ -48,7 +49,7 @@ function toPublicTask(row) {
     employeeId: row.employee_id,
     employeeName: row.employee_name,
     taskName: row.task_name,
-    category: row.category || null,
+    ...(featureOn('categories') ? { category: row.category || null } : {}),
     allocatedHours: Number(row.allocated_hours),
     completedHours: Math.round(Number(row.completed_hours || 0) * 10) / 10,
     dueDate: row.due_date,
@@ -157,13 +158,17 @@ const getTask = asyncHandler(async (req, res) => {
 
 // Empty means "no category"; anything else must be one of the SRS categories.
 function cleanCategory(value) {
+  if (!featureOn('categories')) {
+    if (value == null || value === '') return null;
+    throw ApiError.badRequest('Task categories are not available yet.');
+  }
   if (value == null || value === '') return null;
   if (!TASK_CATEGORIES.includes(value)) throw ApiError.badRequest(`category must be one of: ${TASK_CATEGORIES.join(', ')}.`);
   return value;
 }
 
 const listCategories = asyncHandler(async (req, res) => {
-  res.json({ categories: TASK_CATEGORIES });
+  res.json({ categories: featureOn('categories') ? TASK_CATEGORIES : [] });
 });
 
 const assignTask = asyncHandler(async (req, res) => {

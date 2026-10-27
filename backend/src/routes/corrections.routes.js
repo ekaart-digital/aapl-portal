@@ -12,8 +12,8 @@ router.get('/mine', requireCapability('corrections.request'), listMine);
 router.post('/', requireCapability('corrections.request'), createRequest);
 
 // Deciding on one: the people who review time.
-router.get('/', requireCapability('sessions.review'), listForReview);
-router.post('/:id/approve', requireCapability('sessions.review'), approve);
-router.post('/:id/reject', requireCapability('sessions.review'), reject);
+router.get('/', requireCapability('corrections.review'), listForReview);
+router.post('/:id/approve', requireCapability('corrections.review'), approve);
+router.post('/:id/reject', requireCapability('corrections.review'), reject);
 
 module.exports = router;

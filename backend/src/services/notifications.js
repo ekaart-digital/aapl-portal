@@ -4,6 +4,7 @@ const settings = require('./settings');
 const email = require('./email');
 const { periodRange } = require('./periods');
 const { landingFor } = require('../auth/permissions');
+const { featureOn } = require('../config/rollout');
 
 const DUE_SOON_DAYS = 2;
 // Only tasks that went overdue recently raise an alert. Without this limit,
@@ -72,7 +73,7 @@ async function notify({ recipientIds, type, severity = 'info', title, body = '',
 // and the severity is high enough. Never throws.
 async function emailCopies(recipientIds, { severity, title, body, link }) {
   try {
-    if (!recipientIds.length || !email.isConfigured() || !email.shouldEmail(severity, settings.get('emailMinSeverity'))) return;
+    if (!featureOn('email') || !recipientIds.length || !email.isConfigured() || !email.shouldEmail(severity, settings.get('emailMinSeverity'))) return;
     const [people] = await pool.query("SELECT email, name FROM employees WHERE employee_id IN (?) AND status = 'active'", [recipientIds]);
     const base = (process.env.APP_URL || '').replace(/\/$/, '');
     for (const p of people) {
@@ -116,7 +117,7 @@ async function notifyAutoStopped(rows) {
       severity: 'attention',
       title: 'A timer session needs review',
       body: `${r.employee_name} left a timer running on "${r.task_name}" (${r.project_name}). ${cap} was recorded; please confirm or correct it.`,
-      link: '/reports?tab=review',
+      link: `/projects/${r.project_id}`,
       dedupeKey: `autostop:${r.log_id}`,
     });
   }
@@ -233,7 +234,7 @@ async function generateDueNotifications() {
 // Heads and Management. Sent once the daily summary hour has passed; the dedupe
 // key makes it safe to run every hour. Returns how many people were considered.
 async function generateSummaryNotifications(now = new Date()) {
-  if (now.getHours() < settings.get('dailySummaryHour')) return 0;
+  if (!featureOn('summaries') || now.getHours() < settings.get('dailySummaryHour')) return 0;
   // Required here, not at the top, because these modules also use this one.
   const { loadUserContext } = require('../middleware/auth');
   const { dashboardFor } = require('./insight');

@@ -393,7 +393,8 @@ test('a forgotten timer notifies the employee and the project manager, once', as
   assert.equal(theirs.length, 1);
   assert.match(theirs[0].body, /Piping A/);
   assert.match(theirs[0].body, /Left running/);
-  assert.equal(theirs[0].link, '/reports?tab=review');
+  // The project page: it works in every rollout batch, and the session can be corrected from there.
+  assert.match(theirs[0].link, /^\/projects\/\d+$/);
 });
 
 test('stopping a timer that ran past the limit also notifies', async () => {

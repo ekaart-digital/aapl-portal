@@ -11,6 +11,8 @@ import Modal from '../../components/common/Modal';
 import EmptyState from '../../components/common/EmptyState';
 import Loading from '../../components/common/Loading';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { featureOn } from '../../auth/rollout';
 import * as projectsApi from '../../api/projects';
 import * as tasksApi from '../../api/tasks';
 import AdjustSessionModal from '../../components/sessions/AdjustSessionModal';
@@ -23,6 +25,9 @@ export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { pushToast } = useApp();
+  const { user } = useAuth();
+  const categoriesOn = featureOn(user, 'categories');
+  const extrasOn = featureOn(user, 'projectExtras');
 
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -67,10 +72,10 @@ export default function ProjectDetail() {
         ]);
         setAllDepartments(depts);
         setAssignees(people);
-        tasksApi.listCategories().then(setCategories).catch(() => setCategories([]));
+        if (categoriesOn) tasksApi.listCategories().then(setCategories).catch(() => setCategories([]));
       }
       if (perms.edit) {
-        const [managers, leaders] = await Promise.all([projectsApi.listProjectManagers(), projectsApi.listTeamLeaders()]);
+        const [managers, leaders] = await Promise.all([projectsApi.listProjectManagers(), extrasOn ? projectsApi.listTeamLeaders() : Promise.resolve([])]);
         setManagerChoices(managers);
         setTeamLeaderChoices(leaders);
       }
@@ -201,14 +206,16 @@ export default function ProjectDetail() {
       const { teamLeaderId, agreedFee, completionOverridePercent, ...basics } = projectForm;
       const payload = { ...basics, estimatedManHours: Number(projectForm.estimatedManHours) };
       // The optional master fields are sent only when they changed; an empty box clears the value.
-      const tl = teamLeaderId === '' ? null : Number(teamLeaderId);
-      if (tl !== (project.teamLeaderId ?? null)) payload.teamLeaderId = tl;
-      if (project.agreedFee !== undefined) {
-        const fee = agreedFee === '' ? null : Number(agreedFee);
-        if (fee !== (project.agreedFee ?? null)) payload.agreedFee = fee;
+      if (extrasOn) {
+        const tl = teamLeaderId === '' ? null : Number(teamLeaderId);
+        if (tl !== (project.teamLeaderId ?? null)) payload.teamLeaderId = tl;
+        if (project.agreedFee !== undefined) {
+          const fee = agreedFee === '' ? null : Number(agreedFee);
+          if (fee !== (project.agreedFee ?? null)) payload.agreedFee = fee;
+        }
+        const pct = completionOverridePercent === '' ? null : Number(completionOverridePercent);
+        if (pct !== (project.completionOverridePercent ?? null)) payload.completionOverridePercent = pct;
       }
-      const pct = completionOverridePercent === '' ? null : Number(completionOverridePercent);
-      if (pct !== (project.completionOverridePercent ?? null)) payload.completionOverridePercent = pct;
       if (Number(payload.projectManagerId) === project.projectManagerId) delete payload.projectManagerId;
       else payload.projectManagerId = Number(payload.projectManagerId);
       const before = project.departments.map((d) => d.id).sort((a, b) => a - b).join(',');
@@ -275,6 +282,7 @@ export default function ProjectDetail() {
     setSubmitting(true);
     try {
       const payload = { ...taskForm, allocatedHours: Number(taskForm.allocatedHours) };
+      if (!categoriesOn) delete payload.category;
       if (Number(payload.employeeId) === editTask.employeeId) delete payload.employeeId;
       else payload.employeeId = Number(payload.employeeId);
       const updated = await tasksApi.updateTask(editTask.id, payload);
@@ -298,7 +306,7 @@ export default function ProjectDetail() {
       const newTask = await projectsApi.assignTask(id, {
         subDepartmentId: Number(form.subDepartmentId),
         taskName: form.taskName,
-        category: form.category || undefined,
+        ...(categoriesOn && form.category ? { category: form.category } : {}),
         employeeId: Number(form.employeeId),
         allocatedHours: Number(form.allocatedHours),
         dueDate: form.dueDate || undefined,
@@ -363,7 +371,7 @@ export default function ProjectDetail() {
             )}
 
             <div className="divider" />
-            <div className="detail-row"><span className="k">Team Leader</span><span className="v">{project.teamLeaderName || '—'}</span></div>
+            {extrasOn && <div className="detail-row"><span className="k">Team Leader</span><span className="v">{project.teamLeaderName || '—'}</span></div>}
             {project.agreedFee !== undefined && (
               <div className="detail-row"><span className="k">Agreed Fee</span><span className="v">{project.agreedFee != null ? project.agreedFee.toLocaleString() : '—'}</span></div>
             )}
@@ -414,7 +422,7 @@ export default function ProjectDetail() {
                   <div className="cell-sub">{r.departmentName} · {r.subDepartmentName}</div>
                 </div>
               ) },
-              { key: 'category', header: 'Category', render: (r) => r.category || '—' },
+              ...(categoriesOn ? [{ key: 'category', header: 'Category', render: (r) => r.category || '—' }] : []),
               { key: 'emp', header: 'Employee', render: (r) => r.employeeName || '—' },
               { key: 'hours', header: 'Hours (Completed / Allocated)', render: (r) => `${r.completedHours} / ${r.allocatedHours}` },
               { key: 'progress', header: 'Progress', render: (r) => {
@@ -486,21 +494,25 @@ export default function ProjectDetail() {
               {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </FormField>
+          {extrasOn && (
           <FormField label="Team leader">
             <select className="filter-select" style={{ width: '100%' }} aria-label="Team leader" value={projectForm.teamLeaderId} onChange={(e) => setProjectForm({ ...projectForm, teamLeaderId: e.target.value })}>
               <option value="">No team leader</option>
               {teamLeaderChoices.map((l) => <option key={l.id} value={l.id}>{l.name}{l.department ? ` — ${l.department}` : ''}</option>)}
             </select>
           </FormField>
-          {project.agreedFee !== undefined && (
+          )}
+          {extrasOn && project.agreedFee !== undefined && (
             <FormField label="Agreed fee">
               <input type="number" min="0" className="filter-input" style={{ width: '100%' }} aria-label="Agreed fee" value={projectForm.agreedFee} onChange={(e) => setProjectForm({ ...projectForm, agreedFee: e.target.value })} placeholder="Optional" />
             </FormField>
           )}
+          {extrasOn && (
           <FormField label="Project completion (%)">
             <input type="number" min="0" max="100" className="filter-input" style={{ width: '100%' }} aria-label="Project completion" value={projectForm.completionOverridePercent} onChange={(e) => setProjectForm({ ...projectForm, completionOverridePercent: e.target.value })} placeholder="Calculated from completed tasks" />
             <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Enter your own figure, or leave empty to calculate it from the tasks that are completed.</div>
           </FormField>
+          )}
           <FormField label="Departments involved">
             <div className="pill-row" data-testid="department-pills">
               {allDepartments.map((d) => {
@@ -542,12 +554,14 @@ export default function ProjectDetail() {
           <FormField label="Task name">
             <input className="filter-input" style={{ width: '100%' }} value={taskForm.taskName} onChange={(e) => setTaskForm({ ...taskForm, taskName: e.target.value })} />
           </FormField>
+          {categoriesOn && (
           <FormField label="Category">
             <select className="filter-select" style={{ width: '100%' }} aria-label="Category" value={taskForm.category} onChange={(e) => setTaskForm({ ...taskForm, category: e.target.value })}>
               <option value="">No category</option>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </FormField>
+          )}
           <FormField label="Assigned to">
             <select className="filter-select" style={{ width: '100%' }} value={taskForm.employeeId} onChange={(e) => setTaskForm({ ...taskForm, employeeId: e.target.value })}>
               {reassignOptions.map((e) => <option key={e.id} value={e.id}>{e.name} — {e.designation}</option>)}
@@ -638,12 +652,14 @@ export default function ProjectDetail() {
           <FormField label="Task name">
             <input className="filter-input" style={{ width: '100%' }} value={form.taskName} onChange={(e) => setForm({ ...form, taskName: e.target.value })} placeholder="e.g. Pipe stress analysis — Line 14B" />
           </FormField>
+          {categoriesOn && (
           <FormField label="Category">
             <select className="filter-select" style={{ width: '100%' }} aria-label="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
               <option value="">No category</option>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </FormField>
+          )}
           <FormField label="Assign to employee">
             <select className="filter-select" style={{ width: '100%' }} value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} disabled={!form.departmentId}>
               <option value="">Select employee...</option>

@@ -10,6 +10,8 @@ import BarChart from '../../components/charts/BarChart';
 import PeriodControls from '../../components/reports/PeriodControls';
 import RiskBadge from './RiskBadge';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { featureOn } from '../../auth/rollout';
 import * as reportsApi from '../../api/reports';
 import { todayStr, describePeriod, dayLabel } from '../../utils/dates';
 import { exportToExcel, exportToPdf, exportToCsv } from '../../utils/exportReport';
@@ -29,6 +31,7 @@ const TITLES = { day: 'End-of-Day Summary', week: 'Weekly Summary', month: 'Mont
 // nearing their budget and the major exceptions, for the user's own scope.
 export default function Summary() {
   const { pushToast } = useApp();
+  const { user } = useAuth();
   const [view, setView] = useState({ period: 'day', date: todayStr() });
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -50,7 +53,7 @@ export default function Summary() {
     ...data.byProject.map((r) => ({ ...r, group: 'Project', name: `${r.jobCode} — ${r.name}` })),
     ...data.byDepartment.map((r) => ({ ...r, group: 'Department' })),
     ...data.byEmployee.map((r) => ({ ...r, group: 'Employee' })),
-    ...data.byCategory.map((r) => ({ ...r, group: 'Category' })),
+    ...(featureOn(user, 'categories') ? data.byCategory.map((r) => ({ ...r, group: 'Category' })) : []),
   ] : []), [data]);
 
   async function handleExport(kind) {
@@ -171,7 +174,7 @@ export default function Summary() {
           {table('Top projects by hours', data.topProjects, true)}
           {table('By department', data.byDepartment)}
           {table('By person', data.byEmployee)}
-          {table('By task category', data.byCategory)}
+          {featureOn(user, 'categories') && table('By task category', data.byCategory)}
         </>
       )}
     </>

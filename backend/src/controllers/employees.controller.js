@@ -9,6 +9,7 @@ const {
   ROLES, ALL_ROLES, ROLE_LABELS, NO_DEPARTMENT_ROLES, HR_ASSIGNABLE_ROLES, PROJECT_MANAGER_ROLES, TASK_HOLDER_ROLES, can,
 } = require('../auth/permissions');
 const { employeeScope } = require('../auth/scope');
+const { isRoleEnabled, featureOn } = require('../config/rollout');
 
 const MAX_PHOTO_CHARS = 250000; // roughly a 180 KB image
 const PHOTO_RE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
@@ -84,6 +85,8 @@ const createEmployee = asyncHandler(async (req, res) => {
   const { name, email, password, role, departmentId, teamId, designation, dateOfJoining, mobileNumber, overtimeEligible } = req.body;
   if (!name || !email || !password || !role) throw ApiError.badRequest('name, email, password and role are required.');
   if (!ALL_ROLES.includes(role)) throw ApiError.badRequest(`role must be one of: ${ALL_ROLES.join(', ')}.`);
+  if (!isRoleEnabled(role)) throw ApiError.badRequest('That role is not available yet.');
+  if (overtimeEligible !== undefined && !featureOn('overtime')) throw ApiError.badRequest('Overtime eligibility is not available yet.');
   assertActorMayManageRole(req.user, role);
   assertOptionalFields({ email, dateOfJoining, mobileNumber });
   assertStrongPassword(password);
@@ -119,6 +122,7 @@ async function assertNotLastSystemAdmin(targetId) {
 
 const updateEmployee = asyncHandler(async (req, res) => {
   const body = req.body;
+  if (has(body, 'overtimeEligible') && !featureOn('overtime')) throw ApiError.badRequest('Overtime eligibility is not available yet.');
   const target = await fetchEmployee(req.params.id);
   if (!target) throw ApiError.notFound('Employee not found.');
   const isSelf = target.employee_id === req.user.id;
@@ -139,6 +143,7 @@ const updateEmployee = asyncHandler(async (req, res) => {
   if (body.role !== undefined && body.role !== target.role) {
     if (!can(req.user.role, 'roles.assign')) throw ApiError.forbidden('Only a System Administrator can change roles.');
     if (!ALL_ROLES.includes(body.role)) throw ApiError.badRequest(`role must be one of: ${ALL_ROLES.join(', ')}.`);
+    if (!isRoleEnabled(body.role)) throw ApiError.badRequest('That role is not available yet.');
     if (isSelf) throw ApiError.badRequest('You cannot change your own role.');
     newRole = body.role;
   }
@@ -250,6 +255,7 @@ const resetPassword = asyncHandler(async (req, res) => {
 
 // The photograph is kept out of the lists (it is large) and fetched on its own.
 const getPhoto = asyncHandler(async (req, res) => {
+  if (!featureOn('photos')) throw ApiError.notFound('Photographs are not available yet.');
   const scope = employeeScope(req.user, 'e');
   const [rows] = await pool.query(`SELECT e.photo FROM employees e WHERE e.employee_id = ? AND ${scope.sql}`, [req.params.id, ...scope.params]);
   if (!rows.length) throw ApiError.notFound('Employee not found.');
@@ -257,6 +263,7 @@ const getPhoto = asyncHandler(async (req, res) => {
 });
 
 const setPhoto = asyncHandler(async (req, res) => {
+  if (!featureOn('photos')) throw ApiError.notFound('Photographs are not available yet.');
   const target = await fetchEmployee(req.params.id);
   if (!target) throw ApiError.notFound('Employee not found.');
   if (req.user.role !== ROLES.SYSTEM_ADMIN && PROTECTED_ROLES.includes(target.role)) {

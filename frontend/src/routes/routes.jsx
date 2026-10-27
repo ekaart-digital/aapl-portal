@@ -49,8 +49,11 @@ export const routes = [
             children: [
               { path: 'my-tasks', element: <MyTasks /> },
               { path: 'my-progress', element: <MyProgress /> },
-              { path: 'my-report', element: <WorkReport own /> },
             ],
+          },
+          {
+            element: <RequireCapability capability="reports.own" />,
+            children: [{ path: 'my-report', element: <WorkReport own /> }],
           },
           {
             element: <RequireCapability capability="corrections.request" />,
@@ -69,17 +72,20 @@ export const routes = [
             element: <RequireCapability capability="reports.view" />,
             children: [
               { path: 'reports', element: <Reports /> },
-              { path: 'man-hours', element: <ManHours /> },
               { path: 'summary', element: <Summary /> },
               { path: 'work-report', element: <WorkReport /> },
             ],
+          },
+          {
+            element: <RequireCapability capability="manhours.view" />,
+            children: [{ path: 'man-hours', element: <ManHours /> }],
           },
           {
             element: <RequireCapability capability="exceptions.view" />,
             children: [{ path: 'exceptions', element: <Exceptions /> }],
           },
           {
-            element: <RequireCapability capability="sessions.review" />,
+            element: <RequireCapability capability="corrections.review" />,
             children: [{ path: 'approvals', element: <Approvals /> }],
           },
           {

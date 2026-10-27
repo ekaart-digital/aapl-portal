@@ -12,6 +12,7 @@ import { useApp } from '../../context/AppContext';
 import * as reportsApi from '../../api/reports';
 import * as employeesApi from '../../api/employees';
 import { todayStr, describePeriod, dayLabel } from '../../utils/dates';
+import { featureOn } from '../../auth/rollout';
 import { taskBadgeStatus, TASK_STATUSES } from '../../utils/taskStatus';
 import { exportToExcel, exportToPdf, exportToCsv } from '../../utils/exportReport';
 
@@ -64,7 +65,7 @@ export default function WorkReport({ own = false }) {
 
   const exportRows = useMemo(() => (data ? [
     ...data.byProject.map((r) => ({ ...r, group: 'Project', name: `${r.jobCode} — ${r.name}` })),
-    ...data.byCategory.map((r) => ({ ...r, group: 'Category' })),
+    ...(featureOn(user, 'categories') ? data.byCategory.map((r) => ({ ...r, group: 'Category' })) : []),
     ...data.daily.map((d) => ({ group: 'Day', name: d.date, hours: d.hours })),
   ] : []), [data]);
 
@@ -175,7 +176,7 @@ export default function WorkReport({ own = false }) {
           </div>
 
           {table('Project distribution', data.byProject, true)}
-          {table('Task categories', data.byCategory)}
+          {featureOn(user, 'categories') && table('Task categories', data.byCategory)}
         </>
       )}
     </>

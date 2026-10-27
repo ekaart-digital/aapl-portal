@@ -14,6 +14,7 @@ import { useApp } from '../../context/AppContext';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import { resizeImageToDataUrl } from '../../utils/image';
+import { featureOn, roleOpen } from '../../auth/rollout';
 import {
   ALL_ROLES, HR_ASSIGNABLE_ROLES, DEPARTMENT_ROLES, TEAM_MEMBER_ROLES, ROLE_LABELS, roleLabel,
 } from '../../auth/roles';
@@ -34,7 +35,10 @@ export default function Employees() {
   const { pushToast } = useApp();
   const canManage = can('employees.manage');
   const canAssignRoles = can('roles.assign');
-  const roleChoices = canAssignRoles ? ALL_ROLES : HR_ASSIGNABLE_ROLES;
+  const overtimeOn = featureOn(user, 'overtime');
+  const photosOn = featureOn(user, 'photos');
+  // Only the roles that are open can be chosen.
+  const roleChoices = (canAssignRoles ? ALL_ROLES : HR_ASSIGNABLE_ROLES).filter((r) => roleOpen(user, r));
 
   const [employees, setEmployees] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -127,7 +131,7 @@ export default function Employees() {
         designation: createForm.designation || undefined,
         dateOfJoining: createForm.dateOfJoining || undefined,
         mobileNumber: createForm.mobileNumber || undefined,
-        overtimeEligible: createForm.overtimeEligible || undefined,
+        overtimeEligible: overtimeOn ? (createForm.overtimeEligible || undefined) : undefined,
       });
       setEmployees((prev) => [...prev, created]);
       setCreateOpen(false);
@@ -153,7 +157,7 @@ export default function Employees() {
         designation: editForm.designation,
         dateOfJoining: editForm.dateOfJoining || null,
         mobileNumber: editForm.mobileNumber || null,
-        overtimeEligible: editForm.overtimeEligible,
+        ...(overtimeOn ? { overtimeEligible: editForm.overtimeEligible } : {}),
         status: editForm.status,
       };
       if (editForm.role !== selected.role) payload.role = editForm.role;
@@ -265,7 +269,7 @@ export default function Employees() {
             </select>
             <select className="filter-select" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Role">
               <option value="All">All Roles</option>
-              {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              {ALL_ROLES.filter((r) => roleOpen(user, r)).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
           </div>
           <DataTable
@@ -355,10 +359,12 @@ export default function Employees() {
               <input className="filter-input" style={{ width: '100%' }} value={createForm.mobileNumber} onChange={(e) => setCreateForm({ ...createForm, mobileNumber: e.target.value })} />
             </FormField>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12 }}>
-            <input type="checkbox" checked={createForm.overtimeEligible} onChange={(e) => setCreateForm({ ...createForm, overtimeEligible: e.target.checked })} />
-            Eligible for overtime
-          </label>
+          {overtimeOn && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12 }}>
+              <input type="checkbox" checked={createForm.overtimeEligible} onChange={(e) => setCreateForm({ ...createForm, overtimeEligible: e.target.checked })} />
+              Eligible for overtime
+            </label>
+          )}
         </Drawer>
       )}
 
@@ -375,7 +381,7 @@ export default function Employees() {
           </>
         ) : <button className="btn" onClick={() => setSelected(null)}>Close</button>}
       >
-        {selected && (
+        {photosOn && selected && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
             {photo ? (
               <img src={photo} alt={`Photograph of ${selected.name}`} style={{ width: 84, height: 84, borderRadius: '50%', objectFit: 'cover' }} />
@@ -407,7 +413,7 @@ export default function Employees() {
             <div className="detail-row"><span className="k">Department head</span><span className="v">{selected.reportsToDepartmentHead?.name || '—'}</span></div>
             <div className="detail-row"><span className="k">Date of joining</span><span className="v">{selected.dateOfJoining || '—'}</span></div>
             <div className="detail-row"><span className="k">Mobile</span><span className="v">{selected.mobileNumber || '—'}</span></div>
-            <div className="detail-row"><span className="k">Overtime</span><span className="v">{selected.overtimeEligible ? 'Eligible' : 'Not eligible'}</span></div>
+            {overtimeOn && <div className="detail-row"><span className="k">Overtime</span><span className="v">{selected.overtimeEligible ? 'Eligible' : 'Not eligible'}</span></div>}
             {selected.currentProjects && (
               <div className="detail-row"><span className="k">Current projects</span><span className="v">{selected.currentProjects.length ? selected.currentProjects.join(', ') : 'None'}</span></div>
             )}
@@ -428,7 +434,7 @@ export default function Employees() {
             {canAssignRoles && !isSelf && (
               <FormField label="Role">
                 <select className="filter-select" style={{ width: '100%' }} value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} aria-label="Role">
-                  {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                  {ALL_ROLES.filter((r) => roleOpen(user, r) || r === selected.role).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </select>
               </FormField>
             )}
@@ -458,10 +464,12 @@ export default function Employees() {
                 <input className="filter-input" style={{ width: '100%' }} value={editForm.mobileNumber} onChange={(e) => setEditForm({ ...editForm, mobileNumber: e.target.value })} />
               </FormField>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12 }}>
-              <input type="checkbox" checked={editForm.overtimeEligible} onChange={(e) => setEditForm({ ...editForm, overtimeEligible: e.target.checked })} />
-              Eligible for overtime
-            </label>
+            {overtimeOn && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12 }}>
+                <input type="checkbox" checked={editForm.overtimeEligible} onChange={(e) => setEditForm({ ...editForm, overtimeEligible: e.target.checked })} />
+                Eligible for overtime
+              </label>
+            )}
             <FormField label="Account status">
               <select className="filter-select" style={{ width: '100%' }} value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} disabled={isSelf} aria-label="Account status">
                 <option value="active">Active</option>

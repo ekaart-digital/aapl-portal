@@ -7,6 +7,7 @@
 // on the regular sweep, so reads are cheap and synchronous.
 
 const pool = require('../config/db');
+const { featureOn } = require('../config/rollout');
 
 const DEFINITIONS = {
   maxSessionHours: {
@@ -32,12 +33,12 @@ const DEFINITIONS = {
   emailMinSeverity: {
     label: 'Email notifications',
     description: 'Which notifications are also sent by email (when email is set up): 0 = none, 1 = all, 2 = attention and critical, 3 = critical only.',
-    unit: 'level', min: 0, max: 3, step: 1, default: 2,
+    unit: 'level', min: 0, max: 3, step: 1, default: 2, feature: 'email',
   },
   dailySummaryHour: {
     label: 'Daily summary time',
     description: 'From this hour of the day the daily summary is sent to Team Leaders, Department Heads and Management, and on Fridays the weekly summary.',
-    unit: 'hour (0-23)', min: 0, max: 23, step: 1, default: 18,
+    unit: 'hour (0-23)', min: 0, max: 23, step: 1, default: 18, feature: 'summaries',
   },
   sessionTimeoutMinutes: {
     label: 'Idle sign-out',
@@ -47,6 +48,10 @@ const DEFINITIONS = {
 };
 
 const KEYS = Object.keys(DEFINITIONS);
+
+// A setting for a feature that is not open yet is neither shown nor accepted.
+const isAvailable = (key) => Boolean(DEFINITIONS[key]) && (!DEFINITIONS[key].feature || featureOn(DEFINITIONS[key].feature));
+const availableKeys = () => KEYS.filter(isAvailable);
 let cache = new Map();
 
 function envValue(def) {
@@ -94,7 +99,7 @@ async function describeAll() {
        FROM system_settings s LEFT JOIN employees e ON e.employee_id = s.updated_by`
   );
   const meta = new Map(rows.map((r) => [r.setting_key, r]));
-  return KEYS.map((key) => {
+  return availableKeys().map((key) => {
     const def = DEFINITIONS[key];
     const row = meta.get(key);
     return {
@@ -126,4 +131,4 @@ async function save(key, value, actorId) {
 // Forget saved values (used by tests, and to return to the defaults).
 function resetCache() { cache = new Map(); }
 
-module.exports = { DEFINITIONS, KEYS, get, load, validate, describeAll, save, resetCache };
+module.exports = { DEFINITIONS, KEYS, availableKeys, isAvailable, get, load, validate, describeAll, save, resetCache };

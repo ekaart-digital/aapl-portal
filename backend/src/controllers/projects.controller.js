@@ -4,6 +4,7 @@ const { ApiError } = require('../utils/ApiError');
 const { projectScope, taskScope, assertCanViewProject, canManageProject, assertCanManageProject, filterAllocatable } = require('../auth/scope');
 const { ROLES, PROJECT_MANAGER_ROLES, TASK_HOLDER_ROLES } = require('../auth/permissions');
 const { notify, checkProjectBudget } = require('../services/notifications');
+const { featureOn, isRoleEnabled } = require('../config/rollout');
 const { projectHealth } = require('../services/insight');
 const { record, changes } = require('../services/audit');
 
@@ -17,10 +18,12 @@ const canSeeCommercial = (user) => Boolean(user) && COMMERCIAL_ROLES.includes(us
 
 function toPublicProject(row, user) {
   return {
-    ...(canSeeCommercial(user) ? { agreedFee: row.agreed_fee != null ? Number(row.agreed_fee) : null } : {}),
-    teamLeaderId: row.team_leader_id ?? null,
-    teamLeaderName: row.tl_name || null,
-    completionOverridePercent: row.completion_override_percent ?? null,
+    ...(featureOn('projectExtras') ? {
+      ...(canSeeCommercial(user) ? { agreedFee: row.agreed_fee != null ? Number(row.agreed_fee) : null } : {}),
+      teamLeaderId: row.team_leader_id ?? null,
+      teamLeaderName: row.tl_name || null,
+      completionOverridePercent: row.completion_override_percent ?? null,
+    } : {}),
     id: row.project_id,
     jobCode: row.job_code,
     name: row.name,
@@ -54,10 +57,12 @@ const BASE_SELECT = `
 
 // Only active managers (Project Managers and Department Heads) can be named
 // the manager of a project.
+const openManagerRoles = () => PROJECT_MANAGER_ROLES.filter(isRoleEnabled);
+
 async function assertEligibleProjectManager(projectManagerId) {
   const [pm] = await pool.query(
     'SELECT employee_id FROM employees WHERE employee_id = ? AND role IN (?) AND status = ?',
-    [projectManagerId, PROJECT_MANAGER_ROLES, 'active']
+    [projectManagerId, openManagerRoles(), 'active']
   );
   if (!pm.length) throw ApiError.badRequest('projectManagerId must reference an active Project Manager or Department Head.');
 }
@@ -69,6 +74,12 @@ const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 // to set; throws a 400 for a value that cannot be stored.
 async function readMasterFields(body) {
   const out = {};
+  if (!featureOn('projectExtras')) {
+    if (['teamLeaderId', 'agreedFee', 'completionOverridePercent'].some((key) => has(body, key))) {
+      throw ApiError.badRequest('Those project fields are not available yet.');
+    }
+    return out;
+  }
   if (has(body, 'teamLeaderId')) {
     if (body.teamLeaderId === null || body.teamLeaderId === '') {
       out.team_leader_id = null;
@@ -144,7 +155,7 @@ async function projectDetail(projectId, user) {
   const health = (await projectHealth(user)).find((h) => h.id === Number(projectId));
   return {
     ...toPublicProject(rows[0], user),
-    ...(health ? {
+    ...(health && featureOn('manHours') ? {
       completionPercent: health.completionPercent,
       completionIsManual: health.completionIsManual,
       projectedFinalManHours: health.projectedFinalManHours,
@@ -414,13 +425,14 @@ const listAssignees = asyncHandler(async (req, res) => {
 const listProjectManagers = asyncHandler(async (req, res) => {
   const [rows] = await pool.query(
     "SELECT employee_id, name, role FROM employees WHERE role IN (?) AND status = 'active' ORDER BY name",
-    [PROJECT_MANAGER_ROLES]
+    [openManagerRoles()]
   );
   res.json({ managers: rows.map((r) => ({ id: r.employee_id, name: r.name, role: r.role })) });
 });
 
 // Active Team Leaders, for naming one on a project.
 const listTeamLeaders = asyncHandler(async (req, res) => {
+  if (!featureOn('projectExtras')) return res.json({ teamLeaders: [] });
   const [rows] = await pool.query(
     `SELECT e.employee_id, e.name, d.name AS department_name FROM employees e
        LEFT JOIN departments d ON d.department_id = e.department_id

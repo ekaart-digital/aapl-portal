@@ -6,6 +6,7 @@ const pool = require('../config/db');
 const { projectScope, taskScope, employeeScope, reviewScope } = require('../auth/scope');
 const { TASK_HOLDER_ROLES } = require('../auth/permissions');
 const settings = require('./settings');
+const { featureOn } = require('../config/rollout');
 
 // Man-hour risk (SRS §26). Hours used against the estimate, and where the
 // project is heading if the pace so far continues.
@@ -74,7 +75,7 @@ async function projectHealth(user, { includeCompleted = true } = {}) {
     const allocated = Number(r.allocated);
     const done = Number(r.allocated_done);
     // Progress is the share of allocated work that is finished.
-    const manualCompletion = r.completion_override_percent != null;
+    const manualCompletion = featureOn('projectExtras') && r.completion_override_percent != null;
     const completionPercent = manualCompletion ? Number(r.completion_override_percent) : allocated > 0 ? (done / allocated) * 100 : 0;
     const consumedPercent = estimate > 0 ? (consumed / estimate) * 100 : 0;
     const projectedFinal = completionPercent >= THRESHOLDS.minCompletionForProjection && r.status !== 'Completed'
@@ -136,7 +137,7 @@ async function projectManHours(user, projectId) {
     byEmployee: await hoursBy('lg.employee_id', 'lg.name'),
     byTaskType: await hoursBy('sd.sub_department_id', 'sd.name'),
     byDepartment: await hoursBy('d.department_id', 'd.name'),
-    byCategory: await hoursBy("COALESCE(t.category, 'Uncategorised')", "COALESCE(t.category, 'Uncategorised')"),
+    ...(featureOn('categories') ? { byCategory: await hoursBy("COALESCE(t.category, 'Uncategorised')", "COALESCE(t.category, 'Uncategorised')") } : {}),
   };
 }
 
@@ -209,7 +210,7 @@ async function exceptionsFor(user) {
 
   // People with nothing allocated (SRS §29). Only for the roles that look after
   // people: a Team Leader, a Department Head, Management.
-  if (DASHBOARD_KIND[user.role]) {
+  if (DASHBOARD_KIND[user.role] && featureOn('noAllocation')) {
     const ps = employeeScope(user, 'emp');
     const [idle] = await pool.query(
       `SELECT emp.employee_id, emp.name, emp.designation
