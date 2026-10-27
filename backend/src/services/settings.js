@@ -28,7 +28,7 @@ const DEFINITIONS = {
   correctionWindowDays: {
     label: 'Correction request window',
     description: 'How many days back an employee may ask for a logged session to be corrected. Older sessions are corrected by a manager.',
-    unit: 'days', min: 1, max: 90, step: 1, default: 14,
+    unit: 'days', min: 1, max: 90, step: 1, default: 14, feature: 'corrections',
   },
   emailMinSeverity: {
     label: 'Email notifications',

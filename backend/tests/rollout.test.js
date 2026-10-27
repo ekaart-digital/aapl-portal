@@ -187,7 +187,8 @@ test('batch 1: task categories, project extras and employee extras are hidden an
 test('batch 1: settings for closed features are not shown or accepted', async () => {
   setBatch(1);
   const keys = (await get('/system/settings', t.sys)).body.settings.map((s) => s.key);
-  assert.deepEqual(keys, ['maxSessionHours', 'budgetWarnPercent', 'budgetCriticalPercent', 'correctionWindowDays', 'sessionTimeoutMinutes']);
+  assert.deepEqual(keys, ['maxSessionHours', 'budgetWarnPercent', 'budgetCriticalPercent', 'sessionTimeoutMinutes']);
+  assert.equal((await patch('/system/settings', { correctionWindowDays: 7 }, t.sys)).status, 400, 'corrections are batch 3');
   assert.equal((await patch('/system/settings', { emailMinSeverity: 1 }, t.sys)).status, 400);
   assert.equal((await patch('/system/settings', { dailySummaryHour: 9 }, t.sys)).status, 400);
   assert.equal((await patch('/system/settings', { maxSessionHours: 10 }, t.sys)).status, 200);
@@ -258,6 +259,7 @@ test('batch 3: employees can ask for corrections and the people responsible can 
   assert.equal((await get('/corrections/sessions', t.a)).status, 200);
   assert.equal((await get('/reports/summary', t.pm)).status, 403, 'reports are batch 4');
   assert.equal((await login(f.mgmt)).status, 403);
+  assert.ok((await get('/system/settings', t.sys)).body.settings.some((s) => s.key === 'correctionWindowDays'), 'its setting is shown now');
 });
 
 // ===================================================================== batch 4

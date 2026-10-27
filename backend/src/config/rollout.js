@@ -58,6 +58,7 @@ const CAPABILITY_BATCH = {
 // Smaller features that are not a screen or a role of their own.
 const FEATURE_BATCH = {
   manHours: 2, // completion %, projection and risk on a project
+  corrections: 3, // the correction request window setting
   summaries: 4, // daily and weekly summary notifications and their settings
   categories: 5,
   photos: 5,
