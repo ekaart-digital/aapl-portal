@@ -2,6 +2,8 @@
 //
 // Usage:
 //   node scripts/seed-demo.js           load demo data into an empty database
+//   node scripts/seed-demo.js leadership  add Department Heads, Team Leaders and a Managing Director
+//                                         (needs DEMO_PASSWORD, the one the other accounts use)
 //   node scripts/seed-demo.js clear     remove all business data again (needs --yes)
 //
 // Every demo account shares one password: DEMO_PASSWORD if set, otherwise a
@@ -13,7 +15,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const pool = require('../src/config/db');
 const { assertStrongPassword } = require('../src/utils/password');
-const { seedDemo, clearDemo } = require('./lib/demoData');
+const { seedDemo, addLeadership, clearDemo } = require('./lib/demoData');
 
 function generatePassword() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
@@ -33,6 +35,16 @@ function generatePassword() {
     if (!process.argv.includes('--yes')) throw new Error('This removes all departments, people (except System Administrators), projects, tasks and hours. Add --yes to go ahead.');
     await clearDemo(pool);
     console.log('Removed all business data. System Administrator accounts were kept.');
+    return;
+  }
+
+  if (process.argv[2] === 'leadership') {
+    const password = process.env.DEMO_PASSWORD;
+    if (!password) throw new Error('Set DEMO_PASSWORD to the password the other demo accounts use.');
+    assertStrongPassword(password, 'DEMO_PASSWORD');
+    const { accounts } = await addLeadership(pool, await bcrypt.hash(password, 10));
+    console.log(`Added ${accounts.length} accounts. They use the same password as the other demo accounts.\n`);
+    for (const a of accounts) console.log(`  EMP-${String(a.id).padStart(3, '0')}  ${a.role.padEnd(16)} ${a.name}`);
     return;
   }
 

@@ -125,6 +125,27 @@ const PROJECTS = [
   },
 ];
 
+// Added once Batch 2 and later are open: [name, designation] per department, and the Managing Director.
+const HEADS = {
+  'Piping': ['Khalid Al-Rawahi', 'Head of Piping'],
+  'Structural': ['Maryam Al-Balushi', 'Head of Structural'],
+  'Hydraulics/Surge': ['Yusuf Al-Hinai', 'Head of Hydraulics/Surge'],
+  'Acoustics': ['Aisha Al-Kindi', 'Head of Acoustics'],
+  'ESP': ['Said Al-Mamari', 'Head of ESP'],
+};
+const LEADERS = {
+  'Piping': ['Hilal Al-Siyabi', 'Team Leader - Piping'],
+  'Structural': ['Noora Al-Farsi', 'Team Leader - Structural'],
+  'Hydraulics/Surge': ['Sultan Al-Lawati', 'Team Leader - Hydraulics/Surge'],
+  'Acoustics': ['Zainab Al-Habsi', 'Team Leader - Acoustics'],
+  'ESP': ['Mohammed Al-Ghafri', 'Team Leader - ESP'],
+};
+const MANAGEMENT = ['Hamad Al-Said', 'Managing Director'];
+// Which department's team leader looks after each project.
+const PROJECT_LEADER = {
+  'AAPL-26-0812': 'Piping', 'AAPL-26-0745': 'Structural', 'AAPL-26-0791': 'Hydraulics/Surge', 'AAPL-26-0688': 'Structural',
+};
+
 const SESSION_LENGTHS = [180, 150, 210, 120, 240, 90, 180]; // minutes, rotated so days differ
 const DAY_START = 8 * 60; // working day: 08:00 ...
 const DAY_END = 17 * 60 + 30; // ... to 17:30
@@ -361,6 +382,56 @@ async function seedDemo(pool, passwordHash) {
   };
 }
 
+// Adds a Department Head for every department, a Team Leader for each department's
+// first team, and a Managing Director, on top of data loaded by seedDemo(). The
+// team leaders are also given the projects listed above.
+async function addLeadership(pool, passwordHash) {
+  const [[{ c }]] = await pool.query("SELECT COUNT(*) AS c FROM employees WHERE role IN ('team_leader', 'department_head', 'management')");
+  if (Number(c) > 0) throw new Error('Team Leader, Department Head or Management accounts already exist.');
+  const [departments] = await pool.query('SELECT department_id, name FROM departments');
+  if (!departments.length) throw new Error('Load the demo data first.');
+  const [[hr]] = await pool.query("SELECT employee_id, name FROM employees WHERE role = 'hr_admin' ORDER BY employee_id LIMIT 1");
+  const actor = hr ? { id: hr.employee_id, name: hr.name, role: 'hr_admin' } : { id: null, name: 'System', role: null };
+  const [[{ today }]] = await pool.query("SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today");
+  let n = 0;
+  const audit = async (action, entityType, entityId, summary, details) => {
+    n += 1;
+    await pool.query(
+      `INSERT INTO audit_log (actor_id, actor_name, actor_role, action, entity_type, entity_id, summary, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [actor.id, actor.name, actor.role, action, entityType, entityId, summary, JSON.stringify({ ...details, demo: true }), `${shift(today, -1)} ${hhmm(9 * 60 + n * 3)}`]
+    );
+  };
+  const account = async (name, designation, role, departmentId, teamId) => {
+    const id = (await pool.query(
+      `INSERT INTO employees (name, email, password_hash, department_id, team_id, designation, role, status, date_of_joining, mobile_number)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', '2016-09-01', ?)`,
+      [name, emailFor(name), passwordHash, departmentId, teamId, designation, role, `+968 9000 ${String(100 + n).padStart(4, '0')}`]
+    ))[0].insertId;
+    const label = { team_leader: 'Team Leader', department_head: 'Department Head', management: 'Management' }[role];
+    await audit('employee.create', 'employee', id, `Created ${label} account for ${name}`, { role, departmentId });
+    return { id, name, role: label };
+  };
+
+  const accounts = [];
+  const leaderOf = {};
+  for (const d of departments) {
+    const [[team]] = await pool.query('SELECT team_id, name FROM teams WHERE department_id = ? ORDER BY name LIMIT 1', [d.department_id]);
+    const head = await account(...HEADS[d.name], 'department_head', d.department_id, null);
+    const leader = await account(...LEADERS[d.name], 'team_leader', d.department_id, team.team_id);
+    await pool.query('UPDATE departments SET head_id = ? WHERE department_id = ?', [head.id, d.department_id]);
+    await pool.query('UPDATE teams SET leader_id = ? WHERE team_id = ?', [leader.id, team.team_id]);
+    await audit('department.head-change', 'department', d.department_id, `Changed the head of ${d.name}`, { from: null, to: head.id });
+    await audit('team.leader-change', 'team', team.team_id, `Changed the leader of ${team.name}`, { from: null, to: leader.id });
+    leaderOf[d.name] = leader.id;
+    accounts.push(head, leader);
+  }
+  accounts.push(await account(...MANAGEMENT, 'management', null, null));
+  for (const [jobCode, deptName] of Object.entries(PROJECT_LEADER)) {
+    await pool.query('UPDATE projects SET team_leader_id = ? WHERE job_code = ?', [leaderOf[deptName], jobCode]);
+  }
+  return { accounts };
+}
+
 // Removes everything seedDemo() added, plus anything entered since: all
 // departments, teams, people (except System Administrators), projects, tasks,
 // hours and notifications. The real audit trail is kept.
@@ -381,4 +452,4 @@ async function clearDemo(pool) {
   await run("DELETE FROM audit_log WHERE JSON_EXTRACT(details, '$.demo') = TRUE");
 }
 
-module.exports = { seedDemo, clearDemo, demoDataPresent, PROJECTS };
+module.exports = { seedDemo, addLeadership, clearDemo, demoDataPresent, PROJECTS };

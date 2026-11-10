@@ -118,6 +118,33 @@ test('the audit trail for HR shows people and structure, with dates in order', a
   for (const wanted of ['department.create', 'team.create', 'employee.create']) assert.ok(actions.has(wanted), wanted);
 });
 
+test('leadership accounts: heads, team leaders and management can sign in and see their own part', async () => {
+  process.env.ROLLOUT_BATCH = '5';
+  const lead = () => spawnSync('node', [path.join(root, 'scripts', 'seed-demo.js'), 'leadership'], { cwd: root, env: { ...process.env, DEMO_PASSWORD: password }, encoding: 'utf8' });
+  try {
+    assert.equal(run('leadership').status, 1, 'needs the demo password');
+    const added = lead();
+    assert.equal(added.status, 0, added.stderr);
+    const people = [...added.stdout.matchAll(/(EMP-\d+)\s+(Department Head|Team Leader|Management)\s+(.+)/g)].map((m) => ({ id: m[1], role: m[2], name: m[3].trim() }));
+    assert.equal(people.length, 11); // 5 heads, 5 team leaders, 1 managing director
+
+    const again = lead();
+    assert.equal(again.status, 1);
+    assert.match(again.stderr, /already exist/);
+
+    for (const role of ['Management', 'Department Head', 'Team Leader']) {
+      const token = await app.login(people.find((p) => p.role === role).id, password);
+      const res = await app.api('/dashboard', { token });
+      assert.equal(res.status, 200, `${role}: ${JSON.stringify(res.body)}`);
+    }
+    assert.equal(Number((await rows('SELECT COUNT(*) AS c FROM departments WHERE head_id IS NULL'))[0].c), 0);
+    assert.equal(Number((await rows('SELECT COUNT(*) AS c FROM teams WHERE leader_id IS NOT NULL'))[0].c), 5);
+    assert.equal(Number((await rows('SELECT COUNT(*) AS c FROM projects WHERE team_leader_id IS NOT NULL'))[0].c), 4);
+  } finally {
+    process.env.ROLLOUT_BATCH = '1';
+  }
+});
+
 test('clearing needs --yes, then removes the business data and keeps administrators and the real audit trail', async () => {
   await db.query("INSERT INTO audit_log (actor_name, action, entity_type, summary) VALUES ('Admin', 'auth.login', 'auth', 'real entry')");
   const refused = run('clear');
