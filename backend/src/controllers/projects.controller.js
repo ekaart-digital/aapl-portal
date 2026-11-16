@@ -202,6 +202,11 @@ const createProject = asyncHandler(async (req, res) => {
   const [existing] = await pool.query('SELECT project_id FROM projects WHERE job_code = ?', [jobCode]);
   if (existing.length) throw ApiError.conflict(`Job code "${jobCode}" is already in use.`);
 
+  const uniqueDepartmentIds = [...new Set(departmentIds.map(Number))];
+  if (uniqueDepartmentIds.some((n) => !Number.isInteger(n) || n <= 0)) throw ApiError.badRequest('departmentIds must be department IDs.');
+  const [foundDepartments] = await pool.query('SELECT department_id FROM departments WHERE department_id IN (?)', [uniqueDepartmentIds]);
+  if (foundDepartments.length !== uniqueDepartmentIds.length) throw ApiError.badRequest('One or more departments do not exist.');
+
   const pmId = projectManagerId || req.user.id;
   await assertEligibleProjectManager(pmId);
   const masterFields = await readMasterFields(req.body);
@@ -228,7 +233,7 @@ const createProject = asyncHandler(async (req, res) => {
     const projectId = result.insertId;
     await applyMasterFields(conn, projectId, masterFields);
 
-    for (const deptId of departmentIds) {
+    for (const deptId of uniqueDepartmentIds) {
       await conn.query('INSERT INTO project_departments (project_id, department_id) VALUES (?, ?)', [projectId, deptId]);
     }
 

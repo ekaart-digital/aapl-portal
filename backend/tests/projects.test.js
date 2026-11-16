@@ -26,6 +26,9 @@ test('create project: required fields', async () => {
     [valid({ estimatedManHours: undefined }), 'estimatedManHours'],
     [valid({ departmentIds: [] }), 'empty departments'],
     [valid({ departmentIds: 'piping' }), 'departments not an array'],
+    [valid({ departmentIds: [99999] }), 'unknown department'],
+    [valid({ departmentIds: [null] }), 'department is not an ID'],
+    [valid({ departmentIds: ['x'] }), 'department is not a number'],
   ];
   for (const [body, label] of cases) {
     const res = await app.api('/projects', { method: 'POST', token: mgr, body });
