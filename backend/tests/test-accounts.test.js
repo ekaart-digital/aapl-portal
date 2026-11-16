@@ -63,3 +63,52 @@ test('removes the earlier work, keeps departments and sub-disciplines, and sets 
   assert.equal((await rows('SELECT head_id FROM departments ORDER BY department_id LIMIT 1'))[0].head_id, 5);
   assert.deepEqual((await rows('SELECT employee_id FROM employees WHERE team_id IS NOT NULL ORDER BY employee_id')).map((r) => r.employee_id), [6, 7]);
 });
+
+// ===================================================================== sample projects
+const samples = () => spawnSync('node', [path.join(root, 'scripts', 'seed-demo.js'), 'samples'], { cwd: root, env: { ...process.env }, encoding: 'utf8' });
+
+test('sample projects: tasks for the test employee and team leader, owned by the test project manager', async () => {
+  const result = samples();
+  assert.equal(result.status, 0, result.stderr);
+
+  const projects = await rows(`
+    SELECT p.name, p.status, p.project_manager_id AS pm, p.team_leader_id AS tl, p.estimated_man_hours AS estimate,
+           COALESCE(SUM(tl2.duration_minutes), 0) / 60 AS hours
+      FROM projects p LEFT JOIN tasks t ON t.project_id = p.project_id LEFT JOIN time_logs tl2 ON tl2.task_id = t.task_id
+     GROUP BY p.project_id`);
+  assert.equal(projects.length, 5);
+  assert.ok(projects.every((p) => p.pm === 4), 'owned by testprojectmanager');
+  assert.equal(projects.filter((p) => p.tl === 6).length, 1, 'one project names the test team leader');
+  const used = Object.fromEntries(projects.map((p) => [p.name, (Number(p.hours) / Number(p.estimate)) * 100]));
+  assert.ok(used['Saria Refinery Expansion'] > 20 && used['Saria Refinery Expansion'] < 80);
+  assert.ok(used['Al Reem Hospital'] >= 80 && used['Al Reem Hospital'] < 100, 'nearing its estimate');
+  assert.ok(used['Marbella Coastal Residences'] >= 100, 'over its estimate');
+  assert.equal(used['Duqm Port Pipeline'], 0);
+
+  const holders = (await rows('SELECT DISTINCT employee_id AS id FROM tasks ORDER BY employee_id')).map((r) => r.id);
+  assert.deepEqual(holders, [6, 7]);
+  assert.equal(Number((await rows('SELECT COUNT(*) AS c FROM time_logs WHERE end_time IS NULL'))[0].c), 0);
+  assert.equal(Number((await rows('SELECT COUNT(*) AS c FROM time_logs WHERE auto_stopped = 1'))[0].c), 1);
+  const types = (await rows('SELECT DISTINCT type FROM notifications')).map((r) => r.type);
+  for (const wanted of ['budget-warning', 'budget-exceeded', 'task-assigned', 'session-needs-review']) assert.ok(types.includes(wanted), wanted);
+});
+
+test('the test accounts see the samples through the real screens', async () => {
+  const pm = await app.login('EMP-004', 'Password@123');
+  assert.equal((await app.api('/projects', { token: pm })).body.projects.length, 5);
+
+  const employee = await app.login('EMP-007', 'Password@123');
+  const mine = (await app.api('/tasks/mine', { token: employee })).body.tasks;
+  assert.ok(mine.length >= 4);
+
+  for (const [id, path] of [['EMP-003', '/dashboard'], ['EMP-005', '/dashboard/projects'], ['EMP-006', '/dashboard/exceptions'], ['EMP-003', '/reports/summary']]) {
+    const res = await app.api(path, { token: await app.login(id, 'Password@123') });
+    assert.equal(res.status, 200, `${id} ${path}: ${JSON.stringify(res.body)}`);
+  }
+});
+
+test('sample projects are only added once', () => {
+  const again = samples();
+  assert.equal(again.status, 1);
+  assert.match(again.stderr, /There are projects already/);
+});

@@ -166,6 +166,39 @@ const shift = (day, days) => {
 // Oman's working week is Sunday to Thursday.
 const isWorkingDay = (day) => ![5, 6].includes(new Date(`${day}T12:00:00Z`).getUTCDay());
 
+// Writes each task's logged time as Start/Stop sessions, newest first, each on a
+// working day with room left for that person. tasks: { id, employeeId, hours,
+// share, status, dueIn }. `booked`/`book` track the minutes already used per person and day.
+async function logSessions(pool, tasks, { rel, booked, book }) {
+  const logs = []; // [taskId, employeeId, day, startMinute, minutes]
+  let rotate = 0;
+  for (const t of tasks) {
+    let remaining = Math.round(t.hours * 60 * t.share);
+    if (remaining <= 0) continue;
+    // Finished work ended before its due date; work in progress was last touched recently.
+    let day = rel(t.status === 'Completed' ? Math.min(t.dueIn, -1) : -1 - (rotate % 3));
+    rotate += 1;
+    let n = 0;
+    while (remaining > 0) {
+      let minutes = Math.min(remaining, SESSION_LENGTHS[(rotate + n) % SESSION_LENGTHS.length]);
+      if (remaining - minutes < 30) minutes = remaining;
+      n += 1;
+      while (!isWorkingDay(day) || booked(t.employeeId, day) + minutes > DAY_END - DAY_START) day = shift(day, -1);
+      const start = DAY_START + booked(t.employeeId, day);
+      logs.push([t.id, t.employeeId, day, start, minutes]);
+      book(t.employeeId, day, minutes);
+      remaining -= minutes;
+      day = shift(day, -1);
+    }
+  }
+  for (const [taskId, employeeId, day, start, minutes] of logs) {
+    await pool.query(
+      `INSERT INTO time_logs (task_id, employee_id, start_time, end_time, duration_minutes, log_date) VALUES (?, ?, ?, ?, ?, ?)`,
+      [taskId, employeeId, `${day} ${hhmm(start)}`, `${day} ${hhmm(start + minutes)}`, minutes, day]
+    );
+  }
+}
+
 async function demoDataPresent(pool) {
   const [[row]] = await pool.query(
     `SELECT (SELECT COUNT(*) FROM departments) AS departments, (SELECT COUNT(*) FROM projects) AS projects,
@@ -249,7 +282,6 @@ async function seedDemo(pool, passwordHash) {
   const forgottenCap = maxSessionMinutes();
 
   const created = {}; // job code -> { id, tasks: [{id, ...}] }
-  let rotate = 0;
   for (const p of PROJECTS) {
     const pmId = managerId[p.pm];
     const projectId = await insert(
@@ -281,35 +313,7 @@ async function seedDemo(pool, passwordHash) {
   const stuckDay = (() => { let d = rel(-forgotten.daysAgo); while (!isWorkingDay(d)) d = shift(d, -1); return d; })();
   book(stuck.employeeId, stuckDay, DAY_END - DAY_START);
 
-  // Sessions, newest first, each on a working day with room left for that person.
-  const logs = []; // [taskId, employeeId, day, startMinute, minutes]
-  for (const p of PROJECTS) {
-    for (const t of created[p.jobCode].tasks) {
-      let remaining = Math.round(t.hours * 60 * t.share);
-      if (remaining <= 0) continue;
-      // Finished work ended before its due date; work in progress was last touched recently.
-      let day = rel(t.status === 'Completed' ? Math.min(t.dueIn, -1) : -1 - (rotate % 3));
-      rotate += 1;
-      let n = 0;
-      while (remaining > 0) {
-        let minutes = Math.min(remaining, SESSION_LENGTHS[(rotate + n) % SESSION_LENGTHS.length]);
-        if (remaining - minutes < 30) minutes = remaining;
-        n += 1;
-        while (!isWorkingDay(day) || booked(t.employeeId, day) + minutes > DAY_END - DAY_START) day = shift(day, -1);
-        const start = DAY_START + booked(t.employeeId, day);
-        logs.push([t.id, t.employeeId, day, start, minutes]);
-        book(t.employeeId, day, minutes);
-        remaining -= minutes;
-        day = shift(day, -1);
-      }
-    }
-  }
-  for (const [taskId, employeeId, day, start, minutes] of logs) {
-    await pool.query(
-      `INSERT INTO time_logs (task_id, employee_id, start_time, end_time, duration_minutes, log_date) VALUES (?, ?, ?, ?, ?, ?)`,
-      [taskId, employeeId, `${day} ${hhmm(start)}`, `${day} ${hhmm(start + minutes)}`, minutes, day]
-    );
-  }
+  await logSessions(pool, PROJECTS.flatMap((p) => created[p.jobCode].tasks), { rel, booked, book });
 
   // The forgotten timer, closed by the system.
   const stuckStart = 6 * 60 + 30;
@@ -432,6 +436,165 @@ async function addLeadership(pool, passwordHash) {
   return { accounts };
 }
 
+// A small set of projects for the people who already exist (for example the
+// one-account-per-role test set), so a newcomer sees how projects, tasks, hours
+// and alerts fit together. The tasks go to the Employees and Team Leaders of
+// the first department that has any, managed by the first Project Manager.
+const SAMPLE_PROJECTS = [
+  {
+    jobCode: 'DEMO-001', name: 'Saria Refinery Expansion', client: 'Saria Industrial Holdings', consultant: 'Meridian Engineering Consultants',
+    contractor: 'Horizon Construction Co.', mapContractor: null, status: 'In Progress', start: -120, target: 60, priority: 'High', estimate: 400, leader: true,
+    tasks: [
+      ['Input Study', 'Piping input data review', 0, 40, 'Completed', 1, -50],
+      ['Modelling', '3D piping model', 1, 120, 'In Progress', 0.6, 12],
+      ['Analysis', 'Pipe stress analysis', 0, 140, 'In Progress', 0.25, 30],
+      ['Documentation', 'Stress analysis report', 1, 60, 'Not Started', 0, 45],
+    ],
+  },
+  {
+    jobCode: 'DEMO-002', name: 'Al Reem Hospital', client: 'Al Reem Healthcare Projects', consultant: 'Meridian Engineering Consultants',
+    contractor: 'Vantage Construction Group', mapContractor: 'Bluewave MEP Contractors', status: 'In Progress', start: -150, target: 25, priority: 'Critical', estimate: 300,
+    tasks: [
+      ['Input Study', 'Piping input data review', 1, 40, 'Completed', 1, -90],
+      ['Modelling', '3D piping model', 0, 110, 'Completed', 1, -35],
+      ['Analysis', 'Pipe stress analysis', 1, 110, 'In Progress', 0.9, -1],
+      ['Q&C', 'Quality check', 0, 40, 'Not Started', 0, 2],
+    ],
+  },
+  {
+    jobCode: 'DEMO-003', name: 'Marbella Coastal Residences', client: 'Marbella Coastal Developers', consultant: 'Northgate Design Partners',
+    contractor: 'Summit Builders LLC', mapContractor: 'Coastal MEP Services', status: 'In Progress', start: -100, target: 14, priority: 'Medium', estimate: 130, forgottenTimer: 'Pipe routing review',
+    tasks: [
+      ['Input Study', 'Site data review', 0, 30, 'Completed', 1.1, -60],
+      ['Modelling', 'Pipe routing review', 1, 80, 'In Progress', 1.1, 3, 'Waiting for the revised layout drawings.'],
+      ['SSD', 'Support standard drawings', 0, 50, 'On Hold', 0.2, 20, 'Client is revising the scope.'],
+    ],
+  },
+  {
+    jobCode: 'DEMO-004', name: 'Duqm Port Pipeline', client: 'Duqm Port Authority', consultant: 'Gulf Infrastructure Advisors',
+    contractor: 'Horizon Construction Co.', mapContractor: null, status: 'Planning', start: 7, target: 120, priority: 'Medium', estimate: 240,
+    tasks: [
+      ['Input Study', 'Piping input data review', 1, 40, 'Not Started', 0, 21],
+      ['Modelling', '3D piping model', 0, 90, 'Not Started', 0, 45],
+    ],
+  },
+  {
+    jobCode: 'DEMO-005', name: 'Sohar Data Centre Cooling', client: 'Sohar Digital Infrastructure', consultant: 'Gulf Infrastructure Advisors',
+    contractor: 'Vantage Construction Group', mapContractor: 'Bluewave MEP Contractors', status: 'Completed', start: -200, target: -30, completed: -30, priority: 'High', estimate: 200,
+    tasks: [
+      ['Input Study', 'Piping input data review', 0, 30, 'Completed', 1, -120],
+      ['Modelling', '3D piping model', 1, 90, 'Completed', 1, -75],
+      ['Analysis', 'Pipe stress analysis', 0, 80, 'Completed', 1, -40],
+    ],
+  },
+];
+
+async function addSampleProjects(pool) {
+  const [[{ projects }]] = await pool.query('SELECT COUNT(*) AS projects FROM projects');
+  if (Number(projects) > 0) throw new Error('There are projects already; sample projects are only added to an empty system.');
+  const [[pm]] = await pool.query("SELECT employee_id AS id, name FROM employees WHERE role = 'project_manager' AND status = 'active' ORDER BY employee_id LIMIT 1");
+  if (!pm) throw new Error('There is no Project Manager to own the sample projects.');
+  const [holders] = await pool.query(
+    `SELECT employee_id AS id, name, role, department_id FROM employees
+      WHERE role IN ('employee', 'team_leader') AND status = 'active' AND department_id IS NOT NULL ORDER BY employee_id`
+  );
+  if (!holders.length) throw new Error('There is no Employee or Team Leader in a department to give the tasks to.');
+  const departmentId = holders[0].department_id;
+  const people = holders.filter((h) => h.department_id === departmentId).slice(0, 2); // who the tasks alternate between
+  const leader = holders.find((h) => h.department_id === departmentId && h.role === 'team_leader');
+  const [subs] = await pool.query('SELECT sub_department_id AS id, name FROM sub_departments WHERE department_id = ?', [departmentId]);
+  if (!subs.length) throw new Error('The department has no sub-disciplines to put the tasks under.');
+  // A sub-discipline the client has renamed or removed falls back to the department's first.
+  const sub = new Proxy(Object.fromEntries(subs.map((s) => [s.name, s.id])), { get: (known, name) => known[name] ?? subs[0].id });
+
+  await settings.load();
+  const [[{ today }]] = await pool.query("SELECT DATE_FORMAT(CURDATE(), '%Y-%m-%d') AS today");
+  const rel = (days) => shift(today, days);
+  const used = new Map();
+  const booked = (id, day) => used.get(`${id}|${day}`) || 0;
+  const book = (id, day, minutes) => used.set(`${id}|${day}`, booked(id, day) + minutes);
+  const insert = async (sql, params) => (await pool.query(sql, params))[0].insertId;
+  const audit = [];
+
+  const made = [];
+  let stuck = null;
+  for (const [i, p] of SAMPLE_PROJECTS.entries()) {
+    const projectId = await insert(
+      `INSERT INTO projects (job_code, name, client_name, consultant_name, main_contractor_name, map_contractor_name, project_manager_id,
+                             team_leader_id, start_date, target_date, actual_completion_date, priority, estimated_man_hours, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.jobCode, p.name, p.client, p.consultant, p.contractor, p.mapContractor, pm.id, p.leader && leader ? leader.id : null,
+        rel(p.start), rel(p.target), p.completed != null ? rel(p.completed) : null, p.priority, p.estimate, p.status]
+    );
+    await pool.query('INSERT INTO project_departments (project_id, department_id) VALUES (?, ?)', [projectId, departmentId]);
+    audit.push([pm.id, pm.name, 'project_manager', 'project.create', 'project', projectId, `Created project ${p.name} (${p.jobCode})`,
+      { jobCode: p.jobCode, estimatedManHours: p.estimate }, `${rel(Math.min(p.start, -3) - 1)} 09:${pad(10 + i)}:00`]);
+
+    const tasks = [];
+    for (const [subName, taskName, who, hours, status, share, dueIn, remarks] of p.tasks) {
+      const person = people[who % people.length];
+      const task = {
+        id: await insert(
+          `INSERT INTO tasks (project_id, sub_department_id, employee_id, task_name, allocated_hours, due_date, status, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [projectId, sub[subName], person.id, taskName, hours, rel(dueIn), status, remarks || null]
+        ),
+        employeeId: person.id, employeeName: person.name, taskName, hours, status, share, dueIn,
+      };
+      tasks.push(task);
+      audit.push([pm.id, pm.name, 'project_manager', 'task.assign', 'task', task.id, `Assigned "${taskName}" (${p.name}) to ${person.name}, ${hours}h`,
+        { projectId, employeeId: person.id, allocatedHours: hours }, `${rel(Math.min(p.start, -3) - 1)} 09:${pad(30 + i)}:00`]);
+      if (p.forgottenTimer === taskName) stuck = { ...task, projectId, projectName: p.name };
+    }
+    made.push({ id: projectId, name: p.name, status: p.status, tasks });
+  }
+
+  // One timer that was left running a few days ago and closed by the system.
+  let stuckLog = null;
+  let stuckDay = null;
+  if (stuck) {
+    stuckDay = (() => { let d = rel(-4); while (!isWorkingDay(d)) d = shift(d, -1); return d; })();
+    book(stuck.employeeId, stuckDay, DAY_END - DAY_START);
+  }
+  await logSessions(pool, made.flatMap((m) => m.tasks), { rel, booked, book });
+  if (stuck) {
+    const cap = maxSessionMinutes();
+    const start = 6 * 60 + 30;
+    stuckLog = await insert(
+      `INSERT INTO time_logs (task_id, employee_id, start_time, end_time, duration_minutes, log_date, auto_stopped) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [stuck.id, stuck.employeeId, `${stuckDay} ${hhmm(start)}`, `${stuckDay} ${hhmm(start + cap)}`, cap, stuckDay]
+    );
+    audit.push([null, 'System', null, 'time-log.auto-stop', 'time-log', stuckLog,
+      `Stopped ${stuck.employeeName}'s timer on "${stuck.taskName}" (${stuck.projectName}) at the ${Math.round(cap / 60)}-hour limit`,
+      { employeeId: stuck.employeeId, creditedMinutes: cap, projectId: stuck.projectId }, `${stuckDay} ${hhmm(start + cap)}`]);
+  }
+  await pool.query("UPDATE tasks t SET completed_at = (SELECT MAX(end_time) FROM time_logs WHERE task_id = t.task_id) WHERE t.status = 'Completed'");
+
+  // The notifications the platform would have raised by now.
+  for (const m of made) await checkProjectBudget(m.id);
+  await generateDueNotifications();
+  if (stuck) {
+    await notifyAutoStopped([{
+      log_id: stuckLog, employee_id: stuck.employeeId, task_name: stuck.taskName, project_manager_id: pm.id,
+      employee_name: stuck.employeeName, project_name: stuck.projectName, project_id: stuck.projectId,
+    }]);
+  }
+  for (const t of made.filter((m) => m.status !== 'Completed').flatMap((m) => m.tasks.filter((x) => x.status === 'Not Started').map((x) => ({ ...x, project: m.name })))) {
+    await notify({
+      recipientIds: t.employeeId, type: 'task-assigned', title: 'A task was assigned to you',
+      body: `"${t.taskName}" (${t.project}) was assigned to you, ${t.hours}h.`, link: '/my-tasks', dedupeKey: `demo-assigned:${t.id}`,
+    });
+  }
+
+  audit.sort((a, b) => String(a[8]).localeCompare(String(b[8])));
+  for (const [actorId, actorName, actorRole, action, entityType, entityId, summary, details, at] of audit) {
+    await pool.query(
+      `INSERT INTO audit_log (actor_id, actor_name, actor_role, action, entity_type, entity_id, summary, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [actorId, actorName, actorRole, action, entityType, entityId, summary, JSON.stringify({ ...details, demo: true }), at]
+    );
+  }
+  return { projects: made.length, tasks: made.reduce((n, m) => n + m.tasks.length, 0), manager: pm.name, people: people.map((p) => p.name) };
+}
+
 // Removes everything seedDemo() added, plus anything entered since: all
 // departments, teams, people (except System Administrators), projects, tasks,
 // hours and notifications. The real audit trail is kept.
@@ -452,4 +615,4 @@ async function clearDemo(pool) {
   await run("DELETE FROM audit_log WHERE JSON_EXTRACT(details, '$.demo') = TRUE");
 }
 
-module.exports = { seedDemo, addLeadership, clearDemo, demoDataPresent, PROJECTS };
+module.exports = { seedDemo, addLeadership, addSampleProjects, clearDemo, demoDataPresent, PROJECTS };

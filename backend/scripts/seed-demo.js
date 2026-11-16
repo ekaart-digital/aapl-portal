@@ -4,6 +4,7 @@
 //   node scripts/seed-demo.js           load demo data into an empty database
 //   node scripts/seed-demo.js leadership  add Department Heads, Team Leaders and a Managing Director
 //                                         (needs DEMO_PASSWORD, the one the other accounts use)
+//   node scripts/seed-demo.js samples   add five sample projects with tasks and hours to the people who exist
 //   node scripts/seed-demo.js clear     remove all business data again (needs --yes)
 //
 // Every demo account shares one password: DEMO_PASSWORD if set, otherwise a
@@ -15,7 +16,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const pool = require('../src/config/db');
 const { assertStrongPassword } = require('../src/utils/password');
-const { seedDemo, addLeadership, clearDemo } = require('./lib/demoData');
+const { seedDemo, addLeadership, addSampleProjects, clearDemo } = require('./lib/demoData');
 
 function generatePassword() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
@@ -35,6 +36,12 @@ function generatePassword() {
     if (!process.argv.includes('--yes')) throw new Error('This removes all departments, people (except System Administrators), projects, tasks and hours. Add --yes to go ahead.');
     await clearDemo(pool);
     console.log('Removed all business data. System Administrator accounts were kept.');
+    return;
+  }
+
+  if (process.argv[2] === 'samples') {
+    const r = await addSampleProjects(pool);
+    console.log(`Added ${r.projects} projects with ${r.tasks} tasks, managed by ${r.manager}, with tasks for ${r.people.join(' and ')}.`);
     return;
   }
 
