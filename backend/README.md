@@ -299,12 +299,26 @@ are deleted after 90 days. Due-date alerts and clean-up run hourly.
 
 ## Email
 
-Every notification is also created in the app. To send email copies as well, set
-`SMTP_HOST` (and the other `SMTP_*`, `MAIL_FROM` and `APP_URL` values in
-`.env.example`) and restart. Which notifications are emailed depends on the
-"Email notifications" setting. Email is optional: with no `SMTP_HOST` nothing is
+Every notification is also created in the app. To send email copies as well,
+choose one way of sending (both are in `.env.example`) and restart:
+
+- **Microsoft 365, through Microsoft Graph** (use this where Microsoft no longer
+  accepts a password for SMTP): register an app in Microsoft Entra with the
+  **Mail.Send** *application* permission and grant admin consent, create a client
+  secret, then set `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET` and
+  `MAIL_FROM` (the mailbox the app sends as). Ask the Microsoft admin to restrict the
+  app to that one mailbox. The client secret expires on the date chosen when it
+  was created; set a new one before then.
+- **Any SMTP server:** set `SMTP_HOST` (and the other `SMTP_*` values).
+
+Also set `APP_URL`, the address used for the "Open it" link in emails. If both ways
+are set, Graph is used. To check the settings, send one email:
+`node scripts/send-test-email.js someone@example.com`.
+
+Which notifications are emailed depends on the "Email notifications" setting
+(set it to 0 to send none). Email is optional: with neither way set up nothing is
 sent and nothing else changes, and a failure to send never affects the action
-that caused it. Only active people are emailed.
+that caused it. Only active people are emailed, at the address on their account.
 
 ## Backups, HTTPS and deployment notes
 
